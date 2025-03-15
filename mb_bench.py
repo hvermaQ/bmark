@@ -3,27 +3,23 @@
 # typically we need cases where the energy converges to a finite value in the thermodynamic limit
 # random seeds yeild the error bars at individual points
 #structure: MB_benchmark class.
-#inputs: {nqbits}, {depths}, {nshots}, [noise param] = (infidelity, n_errors), rnds
-#if n_errors  = -n, then n errors per gate
-#selections: Anstaz, topology, compression, 2x hardwares, gateset 
-#next version: noise type, model choice
+#inputs: {nqbits}, {depths}, {nshots}, [noise param] = (infidelity, n_errors), rnds, observable key, ansatz key
+#if n_errors  = -n, then n errors per gate, if n_errors >0, then n errors per circuit
+#selections: observable, Anstaz, topology, compression, 2x hardwares, gateset 
+#next version: noise type, noise model choice
 
 from qat.lang.AQASM import Program, H, X, CNOT, RX, I, RY, RZ, CSIGN #Gates
 from qat.core import Observable, Term, Batch #Hamiltonian
+from qat.core import get_default_qpu
 import numpy as np
 #from qat.plugins import ScipyMinimizePlugin
 #import pickle
 from multiprocessing import Pool
 import matplotlib.pyplot as plt
 
-
-from qat.plugins import Junction
-from qat.core import Result
-from scipy.optimize import minimize
-from qat.core.plugins import AbstractPlugin
 from qat.fermion import SpinHamiltonian
 from qat.qpus import get_default_qpu
-
+from opto_gauss import Opto, GaussianNoise
 
 class MB_benchmark:
     def __init__(self, nqbits, depths,  nshots, noise_params, rnds, ansatz, observe):
@@ -147,46 +143,70 @@ class MB_benchmark:
         circuit = qprog.to_circ()
         return(circuit)
 
+    def create_observable(self, nqbts):
+        if self.observe == "Heisenberg":
+            #Instantiation of Hamiltoniian
+            heisen = Observable(nqbts)
+            #Generation of Heisenberg Hamiltonian
+            for q_reg in range(nqbts-1):
+                heisen += Observable(nqbts, pauli_terms = [Term(1., typ, [q_reg,q_reg + 1]) for typ in ['XX','YY','ZZ']])  
+            obs = heisen
+        return obs
+
+    def exact_Result(self, obs):
+        obs_class = SpinHamiltonian(nqbits=obs.nbqbits, terms=obs.terms)
+        obs_mat = obs_class.get_matrix()
+        eigvals, _ = np.linalg.eigh(obs_mat)
+        g_energy = eigvals[0]
+        return g_energy
+
     # Assuming stack.submit is a method, wrapper below avoiding any object instantitation
     # Wrapper function to handle multiple arguments for map
     #for a selected problem size and selected depth
     # i : dummy iterable
-    def submit_job(self, sel_size, sel_dep, noise_params, ansatz):
-        if ansatz == "RYA":
+    def submit_job(self, sel_size, sel_dep, noise_params, i):
+        if self.ansatz == "RYA":
             circ = self.gen_circ_RYA(sel_size, sel_dep)
-        elif ansatz == "HVA":
+        elif self.ansatz == "HVA":
             circ = self.gen_circ_HVA(sel_size, sel_dep)
         F = noise_params[0]
         n_errs = noise_params[1]
-        mat = self.observe.get_matrix()
+        obse = self.create_observable(sel_size)
+        obse_class = SpinHamiltonian(nqbits=obse.nbqbits, terms=obse.terms)
+        obs_mat = obse_class.get_matrix()
         optimizer = Opto()
         qpu_ideal = get_default_qpu()
-        stack = optimizer | GaussianNoise(F, n_errs, mat) | qpu_ideal  # noisy stack
+        stack = optimizer | GaussianNoise(F, n_errs, obs_mat) | qpu_ideal  # noisy stack
         job = circ.to_job(observable=self.observe, nbshots=self.nshots)
         result = stack.submit(job).value
         return result
-        #return the result
-        return result
     
-    # Simple program running wrapper: VQE stack
-    # reverts to ideal run if F<0
-    # F: infidelity, layers: relevant layer list
-    def run_prog_map(layers, qubits, Fidelity, randoms):
-        problem_set = [(nqb, dep) for nqb in nqbits for dep in depths]
-        # Parallel run handled here
-        with Pool() as p:  # Number of processes can be adjusted
-            result_async = p.map_async(submit_job, [(layer, qubits, Fidelity, y) for layer in layers for y in range(randoms)])  # Passing arguments as a tuple
-            #ress = p.map(submit_job, [(layers, qubits, Fidelity, y) for y in range(randoms)])
-            # Get the results from the asynchronous map
-            ress = result_async.get()  # This will block until all results are available
-        # Now, we want to extract the minimum result for each layer
-        min_results_per_layer = []
-        # Iterate through each layer and find the minimum result for each layer
-        for i, layer in enumerate(layers):
-            layer_results = ress[i * randoms: (i + 1) * randoms]  # Extract the results for the current layer
-            min_results_per_layer.append(np.min(layer_results))  # Find the minimum result for this layer
-        return(min_results_per_layer)  # Return the minimum result
+    # Run parallel jobs for n selected sizes and corresponding depths with rnds random seeds
+    def run_parallel_jobs(self):
+        # Ensure sizes and depths are of the same length
+        if len(self.nqbits) != len(self.depths):
+            raise ValueError("Sizes and depths must have the same length")
 
+        problem_set = list(zip(self.nqbits, self.depths))  # Elementwise tuples
+        # Parallel run handled here
+        with Pool() as pool:  # Number of processes can be adjusted
+            result_async = pool.map_async(
+                self.submit_job,
+                [(size, depth, self.noise_params, rnd) for (size, depth) in problem_set for rnd in range(self.rnds)]
+            )
+            # Get the results from the asynchronous map
+            results = result_async.get()  # This will block until all results are available
+
+        # Now, we want to extract the minimum result for each size and depth
+        min_results_per_problem = []
+        variance_results_per_problem = []
+        for i, (size, depth) in enumerate(problem_set):
+            problem_results = results[i * self.rnds: (i + 1) * self.rnds]  # Extract the results for the current problem
+            min_results_per_problem.append((size, depth, np.min(problem_results)))  # Find the minimum result for this problem
+            variance_results_per_problem.append((size, depth, np.var(problem_results)))  # Calculate the variance for this problem
+
+        return (min_results_per_problem, variance_results_per_problem)  # Return the minimum results
+    
     def result(self):
         res = benchmark(nqbits, nshots, noise_param, rnds)
         self.value = res
