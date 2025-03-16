@@ -51,7 +51,7 @@ class MB_benchmark:
         self.sim_results = 0 #averages at quoted problem sizes
         self.sim_variance = 0 #variance at quoted problem sizes
         self.gateset()
-        self.run()
+        self.bench_run()
 
     #gateset for counting algorithmic resources
     def gateset(self):
@@ -442,6 +442,7 @@ class MB_benchmark:
         plt.grid(True, alpha=0.3)
         
         plt.tight_layout()
+        plt.savefig('extrapolation_results.pdf', bbox_inches='tight')
         plt.show()
 
     def bench_run(self):
