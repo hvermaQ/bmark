@@ -28,7 +28,7 @@ from scipy import stats
 from tqdm import tqdm
 
 class MB_benchmark:
-    def __init__(self, nqbits, depths,  nshots, noise_params, rnds, ansatz, observe, thermal_value, hardware=None):
+    def __init__(self, nqbits, depths,  nshots, noise_params, rnds, ansatz, observe, thermal_value, thermal_size, hardware=None):
         self.nqbits = nqbits
         self.nshots = nshots
         self.noise_params = noise_params
@@ -36,6 +36,7 @@ class MB_benchmark:
         self.depths = depths
         self.ansatz = ansatz
         self.projected_value = 0 #should be the final result for the gs in the thermodynamic limit
+        self.projected_results = None #should be the wrapped final result in ther thermodynamic limit
         self.error = 0 #should be the final result for metric i.e. error in the thermodynamic limit
         self.error_bars = 0 #should be the final result for error bars in the thermodynamic limit
         self.algo_resources = 0 #should be the final result for resources, given the inputs
@@ -44,8 +45,11 @@ class MB_benchmark:
         self.hardware_resources = 0 #should be the final result for hardware resources
         self.hardware_efficiency = 0 #should be the final result for hardware efficiency
         self.hardware = hardware
-        self.thermodynamic_limit = thermal_value
+        self.thermodynamic_limit = thermal_value #exact value at thermodynamic limit
+        self.thermal_size = thermal_size #effective thermodynamic limit i.e. problem size say 1000
         self.gates = None
+        self.sim_results = 0 #averages at quoted problem sizes
+        self.sim_variance = 0 #variance at quoted problem sizes
         self.gateset()
         self.run()
 
@@ -353,8 +357,12 @@ class MB_benchmark:
         sizes, values = zip(*avg_results)
         _, errors = zip(*variance_results)
         
+        self.sim_results = values
+        self.sim_variance = errors
+
         # Perform random walk extrapolation
-        extrapolation_results = self.random_walk_extrapolation(sizes, values, errors, target_size=1000)
+        extrapolation_results = self.random_walk_extrapolation(sizes, values, errors, target_size=self.thermal_size)
+        self.projected_results = extrapolation_results
         self.projected_value = extrapolation_results['extrapolated_value']
         self.error = np.abs(self.projected_value - self.thermodynamic_limit)
         self.error_bars = extrapolation_results['extrapolated_error']
@@ -367,15 +375,83 @@ class MB_benchmark:
 
     def hardware_resource(self, algo_resources):
         #insert algorithmic resources to hardware resources conversion
-        pass
+        #assume same energy consumption for single and two qubit gates
+        h_w0 =  6e9  # Frequency [Hz]  (Ghz ranges)
+        gam = 1  # Gamma [kHz]
+        t_1qb = 25* 10**(-9) #single qubit gate duration in nanosecs
+        A_db = 50 #attenuation in DB
+        A = 10**(A_db/10) #absolute attenuation
+        T_qb = 6e-3  # Qubit Temperature [K]   (6e-3, 10)
+        T_ext = 300 #external temperature in K
+        E_1qb = h_w0 * (np.pi*np.pi)/(4*gam*t_1qb)
+        #total heat evacuated    
+        E_cool = (T_ext - T_qb) * A * E_1qb * algo_resources / T_qb
+        return E_cool
 
     def plot_results(self):
-        #plot results
-        pass
+        problem_sizes = self.nqbits
+        values = self.sim_results
+        errors = self.sim_variance
+        target_size = self.thermal_size
+        results = self.projected_results
+
+        """
+        Plot extrapolation results with confidence intervals
+        """
+        plt.figure(figsize=(12, 8))
+        
+        # Plot data points with error bars
+        plt.errorbar(problem_sizes, values, yerr=errors, fmt='o', color='blue', 
+                    label='Data with error bars', markersize=8, capsize=5)
+        
+        # Plot linear trend
+        x_range = np.linspace(min(problem_sizes), target_size * 1.1, 100)
+        value_slope, value_intercept, _, _, _ = stats.linregress(problem_sizes, values)
+        plt.plot(x_range, value_slope * x_range + value_intercept, 'b--', 
+                label='Linear extrapolation')
+        
+        # Mark extrapolated point
+        plt.plot(target_size, results['extrapolated_value'], 'bs', markersize=8)
+        
+        # Random walk result with error bar
+        plt.errorbar([target_size], [results['random_walk_median']], 
+                    yerr=[results['extrapolated_error']], fmt='ro', markersize=10, 
+                    capsize=5, label=f'Random walk estimate with error')
+        
+        # Add confidence intervals
+        for level, (lower, upper) in results['confidence_intervals'].items():
+            alpha = 0.2 + 0.1 * list(results['confidence_intervals'].keys()).index(level)
+            plt.fill_between([target_size-0.05*target_size, target_size+0.05*target_size], 
+                            [lower, lower], [upper, upper], alpha=alpha, color='red',
+                            label=f'{level*100:.1f}% CI')
+        
+        # Add vertical line at target size
+        plt.axvline(x=target_size, color='k', linestyle='--', alpha=0.5,
+                    label=f'Target size: {target_size}')
+        
+        # Add histogram inset
+        ax_inset = plt.axes([0.6, 0.2, 0.25, 0.25])
+        sns.histplot(results['all_walks'], kde=True, ax=ax_inset)
+        ax_inset.set_title('Distribution of estimates')
+        ax_inset.axvline(x=results['random_walk_median'], color='r', linestyle='--')
+        
+        plt.xlabel('Problem Size')
+        plt.ylabel('Value')
+        plt.title('Random Walk Error Extrapolation')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.show()
 
     def bench_run(self):
         self.benchmark()
+        self.plot_results()
         if self.hardware is not None:
             self.hardware_resources = self.hardware_resource(self.algo_resources)
             self.hardware_efficiency = self.error / self.hardware_resources
+            print("Hardware efficiency = %f" %self.algo_efficiency)
         self.algo_efficiency = self.error / self.algo_resources
+        print("Algorithmic efficiency = %f" %self.algo_efficiency)
+        print("Projected value = %f" %self.projected_value)     
+        print("Error using the exact value = %f" %self.error)
