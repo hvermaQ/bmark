@@ -12,7 +12,6 @@
 
 from qat.lang.AQASM import Program, H, X, CNOT, RX, I, RY, RZ, CSIGN #Gates
 from qat.core import Observable, Term, Batch #Hamiltonian
-from qat.core import get_default_qpu
 import numpy as np
 #from qat.plugins import ScipyMinimizePlugin
 #import pickle
