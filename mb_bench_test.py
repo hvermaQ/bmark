@@ -109,7 +109,7 @@ class MB_benchmark:
             self.obs_mats.append(mat)
             self.pauls.append(len(obss.terms))
             self.stacks.append(Opto()| GaussianNoise(self.noise_params[0], self.noise_params[1], mat) | get_default_qpu())
-            self.jobs.append(circuit.to_job(observable=self.observe, nbshots=self.nshots))
+            self.jobs.append(circuit.to_job(observable=obss, nbshots=self.nshots))
             self.gates_count.append(sum([circuit.count(yt) for yt in self.gates()]))
 
 
