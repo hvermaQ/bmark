@@ -193,13 +193,13 @@ class MB_benchmark:
     # Wrapper function to handle multiple arguments for map
     #for a selected problem size and selected depth
     # i : dummy iterable
-    def submit_job(self, sel_size, sel_dep, noise_params, i):
+    def submit_job(self, sel_size, sel_dep, i):
         if self.ansatz == "RYA":
             circ = self.gen_circ_RYA(sel_size, sel_dep)
         elif self.ansatz == "HVA":
             circ = self.gen_circ_HVA(sel_size, sel_dep)
-        F = noise_params[0]
-        n_errs = noise_params[1]
+        F = self.noise_params[0]
+        n_errs = self.noise_params[1]
         obse = self.create_observable(sel_size)
         obse_class = SpinHamiltonian(nqbits=obse.nbqbits, terms=obse.terms)
         pauls = len(obse.terms)
@@ -224,7 +224,7 @@ class MB_benchmark:
         with Pool() as pool:  # Number of processes can be adjusted
             result_async = pool.map_async(
                 self.submit_job,
-                [(size, depth, self.noise_params, rnd) for (size, depth) in problem_set for rnd in range(self.rnds)]
+                [(size, depth, rnd) for (size, depth) in problem_set for rnd in range(self.rnds)]
             )
             # Get the results from the asynchronous map
             results = result_async.get()  # This will block until all results are available
