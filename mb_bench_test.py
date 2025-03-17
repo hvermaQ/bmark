@@ -63,7 +63,7 @@ class MB_benchmark:
         self.obs_mats = []
         self.pauls = []
         self.jobs = []
-        self.stacks = []
+        self.noisy = []
         self.gates_count = []
         #gateset
         self.gates = None
@@ -108,7 +108,7 @@ class MB_benchmark:
             mat = obse_class.get_matrix()
             self.obs_mats.append(mat)
             self.pauls.append(len(obss.terms))
-            self.stacks.append(Opto()| GaussianNoise(self.noise_params[0], self.noise_params[1], mat) | get_default_qpu())
+            self.noisy.append(GaussianNoise(self.noise_params[0], self.noise_params[1], mat)) 
             self.jobs.append(circuit.to_job(observable=obss, nbshots=self.nshots))
             self.gates_count.append(sum([circuit.count(yt) for yt in self.gates]))
 
@@ -245,7 +245,7 @@ class MB_benchmark:
     #for a selected problem size and selected depth
     # rnd : dummy iterable
     def submit_job(self, i, rnd):
-        stack = self.stacks[i]  # Use precomputed stack
+        stack = Opto() | self.noisy[i] | get_default_qpu()  # Use precomputed stack
         job = self.jobs[i]  # Use precomputed job
         result = stack.submit(job)
         value = result.value
