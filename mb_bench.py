@@ -49,6 +49,8 @@ class MB_benchmark:
         self.gates = None
         self.sim_results = 0 #averages at quoted problem sizes
         self.sim_variance = 0 #variance at quoted problem sizes
+        self.optimizer = Opto()
+        self.qpu_ideal = get_default_qpu()
         self.gateset()
         self.bench_run()
 
@@ -58,6 +60,7 @@ class MB_benchmark:
         one_qb_gateset = ['H', 'X', 'Y', 'Z', 'RX', 'RY', 'RZ']
         two_qb_gateset = ['CNOT', 'CSIGN']  
         self.gates = one_qb_gateset + two_qb_gateset
+        print("Gates!")
 
     def gen_circ_RYA(self, args):
         nqbt = args[0]
@@ -201,9 +204,7 @@ class MB_benchmark:
         obse_class = SpinHamiltonian(nqbits=obse.nbqbits, terms=obse.terms)
         pauls = len(obse.terms)
         obs_mat = obse_class.get_matrix()
-        optimizer = Opto()
-        qpu_ideal = get_default_qpu()
-        stack = optimizer | GaussianNoise(F, n_errs, obs_mat) | qpu_ideal  # noisy stack
+        stack = self.optimizer | GaussianNoise(F, n_errs, obs_mat) | self.qpu_ideal  # noisy stack
         job = circ.to_job(observable=self.observe, nbshots=self.nshots)
         gate_size = sum([job.circuit.count(yt) for yt in self.gates()])
         result = stack.submit(job)
@@ -213,6 +214,7 @@ class MB_benchmark:
     
     # Run parallel jobs for n selected sizes and corresponding depths with rnds random seeds
     def run_parallel_jobs(self):
+        print("Parallelizing")
         # Ensure sizes and depths are of the same length
         if len(self.nqbits) != len(self.depths):
             raise ValueError("Sizes and depths must have the same length")
@@ -226,7 +228,7 @@ class MB_benchmark:
             )
             # Get the results from the asynchronous map
             results = result_async.get()  # This will block until all results are available
-
+        print("Parallel done")
         # Now, we want to extract the minimum and variance result for each size
         avg_results_per_size = []
         variance_results_per_size = []
@@ -351,6 +353,7 @@ class MB_benchmark:
         }
 
     def benchmark(self):
+        print("Benchmarking Main")
         avg_results, variance_results, avg_pauls, avg_gates, avg_iterations = self.run_parallel_jobs()
         # Extract the minimum result and variance for each size
         sizes, values = zip(*avg_results)
@@ -445,8 +448,11 @@ class MB_benchmark:
         plt.show()
 
     def bench_run(self):
+        print("STart benchmarking")
         self.benchmark()
+        print("Done numerical")
         self.plot_results()
+        print("Done plotting")
         if self.hardware is not None:
             self.hardware_resources = self.hardware_resource(self.algo_resources)
             self.hardware_efficiency = self.error / self.hardware_resources
