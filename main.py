@@ -1,5 +1,6 @@
 #main file for running benchmarking tests
 from mb_bench_test import MB_benchmark
+print("Starting the main")
 known_Results = -0.443147 #per site using bethe ansatz for isotropic heisenberg chain
 therm_size = 100
 # nqbits, depths,  nshots, noise_params =[epsilon, n_Errors], rnds, ansatz, observe, thermal_value, thermal_size, hardware=None):

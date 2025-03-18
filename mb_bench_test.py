@@ -20,8 +20,9 @@ from multiprocessing import Pool
 import matplotlib.pyplot as plt
 
 from qat.fermion import SpinHamiltonian
-from qat.qpus import get_default_qpu
-from opto_gauss import Opto, GaussianNoise
+#from qat.qpus import get_default_qpu
+#from opto_gauss import Opto, GaussianNoise'
+from opto_gauss import GaussianNoise
 
 import seaborn as sns
 from scipy import stats
@@ -63,7 +64,7 @@ class MB_benchmark:
         self.obs_mats = []
         self.pauls = []
         self.jobs = []
-        self.noisy = []
+        #self.noisy = []
         self.gates_count = []
         #gateset
         self.gates = None
@@ -98,17 +99,17 @@ class MB_benchmark:
         
         for size, depth in self.problem_set:
             if self.ansatz == "RYA":
-                circuit = self.gen_circ_RYA((size, depth))
+                circuit = MB_benchmark.gen_circ_RYA((size, depth))
             elif self.ansatz == "HVA":
-                circuit = self.gen_circ_HVA((size, depth))
+                circuit = MB_benchmark.gen_circ_HVA((size, depth))
             self.circuits.append(circuit)
-            obss = self.create_observable(self.observe, size)
+            obss = MB_benchmark.create_observable(self.observe, size)
             self.observables.append(obss)
             obse_class = SpinHamiltonian(nqbits=size, terms=obss.terms)
             mat = obse_class.get_matrix()
             self.obs_mats.append(mat)
             self.pauls.append(len(obss.terms))
-            self.noisy.append(GaussianNoise(self.noise_params[0], self.noise_params[1], mat)) 
+            #self.noisy.append(GaussianNoise(self.noise_params[0], self.noise_params[1], mat)) 
             self.jobs.append(circuit.to_job(observable=obss, nbshots=self.nshots))
             self.gates_count.append(sum([circuit.count(yt) for yt in self.gates]))
 
@@ -243,49 +244,83 @@ class MB_benchmark:
         g_energy = eigvals[0]
         return g_energy
 
-    # Assuming stack.submit is a method, wrapper below avoiding any object instantitation
-    # Wrapper function to handle multiple arguments for map
-    #for a selected problem size and selected depth
-    # rnd : dummy iterable
-    def submit_job(self, i, rnd):
-        stack = Opto() | self.noisy[i] | get_default_qpu()  # Use precomputed stack
-        job = self.jobs[i]  # Use precomputed job
+    @staticmethod
+    def init_worker():
+        """Initialize required imports for worker processes"""
+        global Opto, get_default_qpu
+        from opto_gauss import Opto
+        from qat.qpus import get_default_qpu
+
+    @staticmethod
+    def submit_job_wrapper(args):
+        """Wrapper function for parallel job submission that recreates required objects"""
+        i, rnd, job, noise_params, obs_mat = args
+        
+        # Create fresh instances in worker process
+        stack = Opto() | GaussianNoise(noise_params[0], noise_params[1], obs_mat) | get_default_qpu()
         result = stack.submit(job)
-        value = result.value
-        iterations = result.meta_data("n_steps")
-        return (value, iterations)
-    
-    # Run parallel jobs for n selected sizes and corresponding depths with rnds random seeds
+        return (i, result.value, result.meta_data("n_steps"))
+
     def run_parallel_jobs(self):
         print("Parallelizing")
-        # Parallel run handled here
-        with Pool() as pool:  # Number of processes can be adjusted
-            result_async = pool.map_async(
-                self.submit_job,
-                [(i, rnd) for i in range(len(self.problem_set)) for rnd in range(self.rnds)]
-            )
-            # Get the results from the asynchronous map
-            results = result_async.get()  # This will block until all results are available
+        
+        # Prepare arguments for parallel processing
+        job_args = []
+        for i in range(len(self.problem_set)):
+            for rnd in range(self.rnds):
+                # Only pass serializable data
+                job_args.append((
+                    i, 
+                    rnd,
+                    self.jobs[i],
+                    self.noise_params,
+                    self.obs_mats[i]
+                ))
+        
+        # Initialize pool with required imports
+        with Pool(initializer=MB_benchmark.init_worker) as pool:
+            results = pool.map(MB_benchmark.submit_job_wrapper, job_args)
+        
         print("Parallel done")
-        # Now, we want to extract the minimum and variance result for each size
+        
+        # Process results
         avg_results_per_size = []
         variance_results_per_size = []
         n_iterations = []
-        #indexing automatically based on the self.problem set 
-        for i in range(len(self.nqbits)):
-            size_results = [results[j] for j in range(i * self.rnds, (i + 1) * self.rnds)]
-            values = [result[0] for result in size_results]
-            iterations = [result[1] for result in size_results]
-            avg_results_per_size.append(np.mean(values))  # Find the average of result for this size
-            variance_results_per_size.append(np.var(values))  # Calculate the variance for this size
-            n_iterations.append(np.sum(iterations))  # total iterations
+        
+        # Group results by problem size
+        for i in range(len(self.problem_set)):
+            size_results = [(val, iters) for idx, val, iters in results if idx == i]
+            values = [r[0] for r in size_results]
+            iterations = [r[1] for r in size_results]
+            
+            avg_results_per_size.append(np.mean(values))
+            variance_results_per_size.append(np.var(values))
+            n_iterations.append(np.sum(iterations))
+        
         self.sim_iters = n_iterations
         self.sim_results = avg_results_per_size
         self.sim_variance = variance_results_per_size
-    
+
+    def benchmark(self):
+        print("Benchmarking Main")
+        self.run_parallel_jobs()
+
+        # Perform random walk extrapolation
+        extrapolation_results = MB_benchmark.random_walk_extrapolation(self.nqbits, self.sim_results, self.sim_variance, target_size=self.thermal_size)
+        self.projected_results = extrapolation_results
+        self.projected_value = extrapolation_results['extrapolated_value']
+        self.error = np.abs(self.projected_value - self.thermodynamic_limit)
+        self.error_bars = extrapolation_results['extrapolated_error']
+        
+        # Calculate algorithmic resources
+        for i in range(len(self.nqbits)):
+            self.algo_resources += self.pauls[i] * self.gates_count[i] * self.sim_iters[i] * self.nshots
+
+
     @staticmethod
     def random_walk_extrapolation(problem_sizes, values, errors, target_size, 
-                                num_walks=100000, confidence_levels=[0.6827, 0.9545, 0.9973]):
+                                num_walks=1000, confidence_levels=[0.6827, 0.9545, 0.9973]):
         """
         Implement random walk method for error extrapolation to larger problem sizes
         
@@ -386,23 +421,6 @@ class MB_benchmark:
             'all_walks': all_walks
         }
 
-    def benchmark(self):
-        print("Benchmarking Main")
-        self.run_parallel_jobs()
-
-        # Perform random walk extrapolation
-        extrapolation_results = self.random_walk_extrapolation(self.nqbits, self.sim_results, self.sim_variance, target_size=self.thermal_size)
-        self.projected_results = extrapolation_results
-        self.projected_value = extrapolation_results['extrapolated_value']
-        self.error = np.abs(self.projected_value - self.thermodynamic_limit)
-        self.error_bars = extrapolation_results['extrapolated_error']
-        
-        # Calculate algorithmic resources
-        for i in range(len(self.nqbits)):
-            self.algo_resources += self.pauls[i] * self.gates_count[i] * self.sim_iters[i] * self.nshots
-
-        #return self.projected_value, self.error, self.algo_resources
-
     @staticmethod
     def hardware_resource(algo_resources):
         #insert algorithmic resources to hardware resources conversion
@@ -483,7 +501,7 @@ class MB_benchmark:
         self.plot_results()
         print("Done plotting")
         if self.hardware is not None:
-            self.hardware_resources = self.hardware_resource(self.algo_resources)
+            self.hardware_resources = MB_benchmark.hardware_resource(self.algo_resources)
             self.hardware_efficiency = self.error / self.hardware_resources
             print("Hardware efficiency = %f" %self.algo_efficiency)
         self.algo_efficiency = self.error / self.algo_resources
