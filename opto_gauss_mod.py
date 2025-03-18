@@ -65,7 +65,7 @@ class GaussianNoise(AbstractPlugin,):
         self.success = 0
         self.nb_pauli_strings = 0
         self.nbshots = 0
-        self.n_rrors = n_errors
+        self.n_errors = n_errors
 
     def compile(self, batch, _):
         self.nbshots =  batch.jobs[0].nbshots

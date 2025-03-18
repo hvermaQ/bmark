@@ -107,8 +107,8 @@ class MB_benchmark:
             self.circuits.append(circuit)
             obss = MB_benchmark.create_observable(self.observe, size)
             self.observables.append(obss)
-            obse_class = SpinHamiltonian(nqbits=size, terms=obss.terms)
-            mat = obse_class.get_matrix()
+            #obse_class = SpinHamiltonian(nqbits=size, terms=obss.terms)
+            mat = obss.to_matrix()
             self.obs_mats.append(mat)
             self.pauls.append(len(obss.terms))
             #self.noisy.append(GaussianNoise(self.noise_params[0], self.noise_params[1], mat)) 
@@ -249,6 +249,7 @@ class MB_benchmark:
     @staticmethod
     def init_worker():
         """Initialize required imports for worker processes"""
+        #possibly global noise params
         global Opto, get_default_qpu, GaussianNoise
         from opto_gauss_mod import Opto, GaussianNoise
         from qat.qpus import get_default_qpu
@@ -256,13 +257,20 @@ class MB_benchmark:
     @staticmethod
     def submit_job_wrapper(args):
         """Wrapper function for parallel job submission that recreates required objects"""
-        i, rnd, job, noise_params, obs_mat = args
-        
+        nqbts, dep, rnd, ans, ham, n_params = args
+        #everything based on i
+        if ans == "RYA":
+            circuit = MB_benchmark.gen_circ_RYA((nqbts, dep))
+        elif ans == "HVA":
+            circuit = MB_benchmark.gen_circ_HVA((nqbts, dep))
+        obss = MB_benchmark.create_observable(ham, nqbts)
+        job = circuit.to_job(observable=obss, nbshots=0)
+        obs_mat = obss.to_matrix().A
         # Create fresh instances in worker process
-        stack = Opto() | GaussianNoise(noise_params[0], noise_params[1], obs_mat) | get_default_qpu()
+        stack = Opto() | GaussianNoise(n_params[0], n_params[1], obs_mat) | get_default_qpu()
         result = stack.submit(job)
         print(result.meta_data["n_steps"])
-        return (i, result.value, result.meta_data["n_steps"])
+        return (nqbts, result.value, result.meta_data["n_steps"])
 
     def run_parallel_jobs(self):
         print("Parallelizing")
@@ -273,11 +281,12 @@ class MB_benchmark:
             for rnd in range(self.rnds):
                 # Only pass serializable data
                 job_args.append((
-                    i, 
+                    self.problem_set[i][0], 
+                    self.problem_set[i][1],
                     rnd,
-                    self.jobs[i],
-                    self.noise_params,
-                    self.obs_mats[i]
+                    self.ansatz,
+                    self.observe,
+                    self.noise_params
                 ))
         
         num_processes = min(cpu_count(), len(job_args))
@@ -298,7 +307,7 @@ class MB_benchmark:
         
         # Group results by problem size
         for i in range(len(self.problem_set)):
-            size_results = [(val, iters) for idx, val, iters in results if idx == i]
+            size_results = [(val, iters) for nqb, val, iters in results if  nqb == self.problem_set[i][0]]
             values = [r[0] for r in size_results]
             iterations = [int(r[1]) for r in size_results]
             
@@ -312,18 +321,19 @@ class MB_benchmark:
 
     def run_serial_jobs(self):
         print("Running jobs serially")
-        MB_benchmark.init_worker()
+        #MB_benchmark.init_worker()
         
         results = []
         for i in range(len(self.problem_set)):
             for rnd in range(self.rnds):
-                # Use same args structure as parallel version
+                # Only pass serializable data
                 args = (
-                    i, 
+                    self.problem_set[i][0], 
+                    self.problem_set[i][1],
                     rnd,
-                    self.jobs[i],
-                    self.noise_params,
-                    self.obs_mats[i]
+                    self.ansatz,
+                    self.observe,
+                    self.noise_params
                 )
                 # Use existing static submit_job_wrapper
                 result = MB_benchmark.submit_job_wrapper(args)
@@ -338,15 +348,17 @@ class MB_benchmark:
         
         # Group results by problem size
         for i in range(len(self.problem_set)):
-            size_results = [(val, iters) for idx, val, iters in results if idx == i]
-            #print(size_results)
+            size_results = [(val, iters) for nqb, val, iters in results if nqb == self.problem_set[i][0]]
+            print(size_results)
             values = [r[0] for r in size_results]
             iterations = [int(r[1]) for r in size_results]
             
             avg_results_per_size.append(np.mean(values))
             variance_results_per_size.append(np.var(values))
-            n_iterations.append(np.mean(iterations))
-        
+            n_iterations.append(np.sum(iterations))
+        print(avg_results_per_size)
+        print(variance_results_per_size)
+        print(n_iterations)
         self.sim_iters = n_iterations
         self.sim_results = avg_results_per_size
         self.sim_variance = variance_results_per_size
