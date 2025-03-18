@@ -102,7 +102,7 @@ class MB_benchmark:
             elif self.ansatz == "HVA":
                 circuit = self.gen_circ_HVA((size, depth))
             self.circuits.append(circuit)
-            obss = self.create_observable(size)
+            obss = self.create_observable(self.observe, size)
             self.observables.append(obss)
             obse_class = SpinHamiltonian(nqbits=size, terms=obss.terms)
             mat = obse_class.get_matrix()
@@ -112,8 +112,8 @@ class MB_benchmark:
             self.jobs.append(circuit.to_job(observable=obss, nbshots=self.nshots))
             self.gates_count.append(sum([circuit.count(yt) for yt in self.gates]))
 
-
-    def gen_circ_RYA(self, args):
+    @staticmethod
+    def gen_circ_RYA(args):
         nqbt = args[0]
         ct = args[1]
         #Variational circuit can only be constructed using the program framework
@@ -143,7 +143,8 @@ class MB_benchmark:
         circuit = qprog.to_circ()
         return(circuit)
 
-    def gen_circ_HVA(self, args):
+    @staticmethod
+    def gen_circ_HVA(args):
         nqbt = args[0]
         ct = args[1]
         #Variational circuit can only be constructed using the program framework
@@ -223,8 +224,9 @@ class MB_benchmark:
         circuit = qprog.to_circ()
         return(circuit)
 
-    def create_observable(self, nqbts):
-        if self.observe == "Heisenberg":
+    @staticmethod
+    def create_observable(type, nqbts):
+        if type == "Heisenberg":
             #Instantiation of Hamiltoniian
             heisen = Observable(nqbts)
             #Generation of Heisenberg Hamiltonian
@@ -233,7 +235,8 @@ class MB_benchmark:
             obs = heisen
         return obs
 
-    def exact_Result(self, obs):
+    @staticmethod
+    def exact_Result(obs):
         obs_class = SpinHamiltonian(nqbits=obs.nbqbits, terms=obs.terms)
         obs_mat = obs_class.get_matrix()
         eigvals, _ = np.linalg.eigh(obs_mat)
@@ -280,8 +283,8 @@ class MB_benchmark:
         self.sim_results = avg_results_per_size
         self.sim_variance = variance_results_per_size
     
-
-    def random_walk_extrapolation(self, problem_sizes, values, errors, target_size, 
+    @staticmethod
+    def random_walk_extrapolation(problem_sizes, values, errors, target_size, 
                                 num_walks=100000, confidence_levels=[0.6827, 0.9545, 0.9973]):
         """
         Implement random walk method for error extrapolation to larger problem sizes
@@ -400,7 +403,8 @@ class MB_benchmark:
 
         #return self.projected_value, self.error, self.algo_resources
 
-    def hardware_resource(self, algo_resources):
+    @staticmethod
+    def hardware_resource(algo_resources):
         #insert algorithmic resources to hardware resources conversion
         #assume same energy consumption for single and two qubit gates
         h_w0 =  6e9  # Frequency [Hz]  (Ghz ranges)
@@ -473,7 +477,7 @@ class MB_benchmark:
         plt.show()
 
     def bench_run(self):
-        print("STart benchmarking")
+        print("Start benchmarking")
         self.benchmark()
         print("Done numerical")
         self.plot_results()
