@@ -25,6 +25,9 @@ from tqdm import tqdm
 
 plt.rcParams.update({'font.size': 16})  # Set global font size
 
+optimizer = Opto()
+qpu = get_default_qpu()
+
 #gateset for counting algorithmic resources
 def gateset():
     #gateset for counting gates to introduce noise through Gaussian noise plugin
@@ -62,7 +65,7 @@ def submit_job_wrapper(args):
     job = circuit.to_job(observable=obss, nbshots=0)
     obs_mat = obss.to_matrix().A
     # Create fresh instances in worker process
-    stack = Opto() | GaussianNoise(n_params[0], n_params[1], obs_mat) | get_default_qpu()
+    stack = optimizer | GaussianNoise(n_params[0], n_params[1], obs_mat) | qpu
     result = stack.submit(job)
     print(result.meta_data["n_steps"])
     return (nqbts, result.value, result.meta_data["n_steps"])
@@ -298,7 +301,7 @@ def plot_results(problem_sizes, values, errors, results, target_size):
 def benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, thermal_size, thermodynamic_limit, hw):
     print("Benchmarking Main")
     problem_set = list(zip(nqbits, depths))
-    sim_results, sim_variance, sim_iterations = run_serial_jobs(problem_set, rnds, ansatz, observe, noise_params)
+    sim_results, sim_variance, sim_iterations = run_parallel_jobs(problem_set, rnds, ansatz, observe, noise_params)
     #self.run_serial_jobs() #for testing
     # Perform random walk extrapolation
     projected_results = random_walk_extrapolation(nqbits, sim_results, sim_variance, target_size=thermal_size)
