@@ -3,10 +3,6 @@
 Created on Thu Feb 13 13:54:14 2025
 
 @author: cqtv201
-
-features to add:
-    1. test for the noiseless case before proceeding to optimization
-    2. samples on the next epsilon curve drawn near the last one
 """
 
 from qat.core import Observable, Term, Batch #Hamiltonian
@@ -251,62 +247,66 @@ def plot_results(problem_sizes, values, errors, results, target_size):
     """
     Plot extrapolation results with confidence intervals
     """
-    plt.figure(figsize=(12, 8))
+    # Create figure with two subplots
+    fig = plt.figure(figsize=(15, 8))
+    
+    # Main plot in larger left subplot
+    ax_main = plt.subplot2grid((1, 3), (0, 0), colspan=2)
     
     # Plot data points with error bars
-    plt.errorbar(problem_sizes, values, yerr=errors, fmt='o', color='blue', 
-                label='Data with error bars', markersize=8, capsize=5)
+    ax_main.errorbar(problem_sizes, values, yerr=errors, fmt='o', color='blue', 
+                    label='Data with error bars', markersize=8, capsize=5)
     
     # Plot linear trend
     x_range = np.linspace(min(problem_sizes), target_size * 1.1, 100)
     value_slope, value_intercept, _, _, _ = stats.linregress(problem_sizes, values)
-    plt.plot(x_range, value_slope * x_range + value_intercept, 'b--', 
-            label='Linear extrapolation')
+    ax_main.plot(x_range, value_slope * x_range + value_intercept, 'b--', 
+                label='Linear extrapolation')
     
     # Mark extrapolated point
-    plt.plot(target_size, results['extrapolated_value'], 'bs', markersize=8)
+    ax_main.plot(target_size, results['extrapolated_value'], 'bs', markersize=8)
     
     # Random walk result with error bar
-    plt.errorbar([target_size], [results['random_walk_median']], 
-                yerr=[results['extrapolated_error']], fmt='ro', markersize=10, 
-                capsize=5, label=f'Random walk estimate with error')
+    ax_main.errorbar([target_size], [results['random_walk_median']], 
+                    yerr=[results['extrapolated_error']], fmt='ro', markersize=10, 
+                    capsize=5, label=f'Random walk estimate with error')
     
     # Add confidence intervals
     for level, (lower, upper) in results['confidence_intervals'].items():
         alpha = 0.2 + 0.1 * list(results['confidence_intervals'].keys()).index(level)
-        plt.fill_between([target_size-0.05*target_size, target_size+0.05*target_size], 
-                        [lower, lower], [upper, upper], alpha=alpha, color='red',
-                        label=f'{level*100:.1f}% CI')
+        ax_main.fill_between([target_size-0.05*target_size, target_size+0.05*target_size], 
+                           [lower, lower], [upper, upper], alpha=alpha, color='red',
+                           label=f'{level*100:.1f}% CI')
     
     # Add vertical line at target size
-    plt.axvline(x=target_size, color='k', linestyle='--', alpha=0.5,
-                label=f'Target size: {target_size}')
+    ax_main.axvline(x=target_size, color='k', linestyle='--', alpha=0.5,
+                    label=f'Target size: {target_size}')
     
-    # Add histogram inset
-    ax_inset = plt.axes([0.6, 0.2, 0.25, 0.25])
-    sns.histplot(results['all_walks'], kde=True, ax=ax_inset)
-    ax_inset.set_title('Distribution of estimates')
-    ax_inset.axvline(x=results['random_walk_median'], color='r', linestyle='--')
-    
-    plt.xlabel('Problem Size')
-    plt.ylabel('Value')
-    plt.title('Random Walk Error Extrapolation')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    ax_main.set_xlabel('Problem Size')
+    ax_main.set_ylabel('Value')
+    ax_main.set_title('Random Walk Error Extrapolation')
+    ax_main.legend()
+    ax_main.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('extrapolation_results.pdf', bbox_inches='tight')
+    #plt.savefig('extrapolation_results.pdf', bbox_inches='tight')
     plt.show()
 
-def benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, thermal_size, thermodynamic_limit, hw):
+def benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, known_size, hw):
     print("Benchmarking Main")
     problem_set = list(zip(nqbits, depths))
     sim_results, sim_variance, sim_iterations = run_parallel_jobs(problem_set, rnds, ansatz, observe, noise_params)
     #self.run_serial_jobs() #for testing
     # Perform random walk extrapolation
-    projected_results = random_walk_extrapolation(nqbits, sim_results, sim_variance, target_size=thermal_size)
+    projected_results = random_walk_extrapolation(nqbits, sim_results, sim_variance, target_size=known_size)
     projected_value = projected_results['extrapolated_value']
-    error = np.abs(projected_value - thermodynamic_limit)
+    #calculate the known result
+    obss = create_observable(observe, known_size)
+    obs_class = SpinHamiltonian(nqbits=obss.nbqbits, terms=obss.terms)
+    obs_mat = obs_class.get_matrix()
+    eigvals, _ = np.linalg.eigh(obs_mat)
+    known_res = eigvals[0]
+    error = np.abs(projected_value - known_res)
     error_bars = projected_results['extrapolated_error']
     # Calculate algorithmic resources
     algo_resources = 0
@@ -332,17 +332,17 @@ def benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, therm
     print("Algorithmic efficiency = %f" %algo_eff)
     print("Projected value = %f" %projected_value)     
     print("Error using the exact value = %f" %error)
-    plot_results(nqbits, sim_results, sim_variance, projected_results, thermal_size)
-    return (sim_results, sim_variance, projected_results, error, error_bars)
+    print("Exact value = %f" %known_res)
+    plot_results(nqbits, sim_results, sim_variance, projected_results, known_size)
+    return (sim_results, sim_variance, projected_results, error, error_bars, projected_results)
 
 #benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, thermal_size, thermodynamic_limit, hw):
 #code to generate result. Especially required for using multiprocessing correctly
 if __name__ == '__main__':
-    nqbits = [3, 5]
-    deps = [3, 5]
+    nqbits = [3, 4, 5]
+    deps = [3, 4, 5]
     rnd = 4 #random seeds
     noise_p = [0.0001, -1]
-    scale = -0.443147 #per site using bethe ansatz for isotropic heisenberg chain
-    therm_size = 10
-    a, b, c, d, e = benchmark(nqbits, deps, rnd, 'RYA', 'Heisenberg', noise_p, 1000, therm_size, therm_size*scale, 'supercond')
+    therm_size = 6
+    a, b, c, d, e, f = benchmark(nqbits, deps, rnd, 'RYA', 'Heisenberg', noise_p, 1000, therm_size, 'supercond')
     print("Completed")
