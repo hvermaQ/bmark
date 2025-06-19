@@ -9,7 +9,6 @@ Created on Thu Feb 13 13:54:14 2025
 #error vs problem size
 #change the plotting routine entirely, to use as postprocessing
 
-
 from qat.core import Observable, Term, Batch #Hamiltonian
 from qat.qpus import get_default_qpu
 from qat.fermion import SpinHamiltonian
@@ -298,18 +297,17 @@ def benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, known
     print("Benchmarking main complete")
     return bmark
 
-
 #benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, thermal_size, thermodynamic_limit, hw):
 #code to generate result. Especially required for using multiprocessing correctly
 if __name__ == '__main__':
     print("Starting Benchmarking")
     #nqbits = [3, 4, 5, 6, 7]
     #deps = [3, 4, 5, 6, 7] #ensure the depths are same in the number as qubits
-    nqbits = [3, 4, 5]
-    deps = [3, 4, 5]
+    nqbits = [3, 4, 5, 6]
+    deps = [3, 4, 5, 6]
     rnd = 4 #random seeds
     noise_p = [0.0001, -1]
-    therm_size = 6 #size of the system to be used for extrapolation
+    therm_size = 7 #size of the system to be used for extrapolation
     bmark_RYA = benchmark(nqbits, deps, rnd, 'RYA', 'Heisenberg', noise_p, 1000, therm_size, 'supercond')
     #plot individual results
     #problem_sizes, values, errors, results, target_size

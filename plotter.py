@@ -30,8 +30,8 @@ def plot_analysis(bmark_dict):
     ax.set_title('ALGO Efficiency vs metric')
     ax.legend()
     ax.grid(True)
-
     #plt.savefig(f'efficiency_vs_resources_{ansatz}.pdf', bbox_inches='tight')
+    plt.savefig('efficiency_ALGO_vs_metric.pdf', bbox_inches='tight')
     plt.show()
     
     #begin figure 1b
@@ -50,6 +50,7 @@ def plot_analysis(bmark_dict):
     ax.set_ylabel('Log HW Efficiency')
     ax.set_title('HW Efficiency vs metric')
     ax.legend()
+    plt.savefig('efficiency_HW_vs_metric.pdf', bbox_inches='tight')
     ax.grid(True)
 
     #plt.savefig(f'efficiency_vs_resources_{ansatz}.pdf', bbox_inches='tight')
@@ -67,7 +68,7 @@ def plot_analysis(bmark_dict):
         log_metric = np.log10(metric)
         log_algo_eff = log_metric - log_algo_res_list
         #log_hw_eff = log_metric - log_hw_res_list
-        ax.plot(int(qubits), log_algo_eff, 'o-', label=ansatz)
+        ax.plot(np.array(qubits).astype(int), log_algo_eff, 'o-', label=ansatz)
 
     ax.set_xlabel('Problem Size')
     ax.set_ylabel('Log ALGO Efficiency')
@@ -81,7 +82,7 @@ def plot_analysis(bmark_dict):
     secax.set_xticks(qubits)
     secax.set_xticklabels(depths)
 
-    #plt.savefig(f'efficiency_vs_resources_{ansatz}.pdf', bbox_inches='tight')
+    plt.savefig('ALGO_efficiency_vs_size.pdf', bbox_inches='tight')
     plt.show()
 
     #begin figure 3
@@ -119,5 +120,5 @@ def plot_analysis(bmark_dict):
 
     # Save and show plot
     plt.tight_layout()
-    #plt.savefig('extrapolation_results_linear.pdf', bbox_inches='tight')
+    plt.savefig('extrapolation_results_linear.pdf', bbox_inches='tight')
     plt.show()
