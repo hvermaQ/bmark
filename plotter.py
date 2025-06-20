@@ -1,3 +1,4 @@
+from xml.parsers.expat import errors
 import matplotlib.pyplot as plt
 import numpy as np
 plt.rcParams.update({'font.size': 16})  # Set global font size
@@ -99,26 +100,41 @@ def plot_analysis(bmark_dict):
         x_range = np.linspace(min(qubits), known_size * 1.1, 100)
         y_fit = slope * x_range + intercept
 
+        #plot actual points
+        plt.errorbar(qubits, sim_results, yerr=abs_errors, fmt='o',
+                      label='Data for ' + ansatz, markersize=8, capsize=5)
         # Plot linear fit
         plt.plot(x_range, y_fit, 'r--', label='Linear fit for ' + ansatz)
 
         # Mark extrapolated point
         plt.errorbar([known_size], [projected_results['extrapolated_value']],
-                    yerr=[projected_results['extrapolated_error']], fmt='ro', markersize=10,
-                    capsize=5, label='Extrapolated value with error')
+                    yerr=error, markersize=8,
+                    capsize=5, label='Extrapolated value for ' + ansatz)
 
-        # Add vertical line at target size
-        plt.axvline(x=known_size, color='k', linestyle='--', alpha=0.5,
-                    label=f'Target size: {known_size}')
+    # Add vertical line at target size
+    plt.axvline(x=known_size, color='k', linestyle='--', alpha=0.5,
+                label=f'Target size: {known_size}')
 
     # Add labels, title, and legend
     plt.xlabel('Problem Size')
     plt.ylabel('Value')
     plt.title('Linear Extrapolation with Error Propagation')
     plt.legend()
-    plt.grid(True, alpha=0.3)
+    plt.grid(True)
 
     # Save and show plot
     plt.tight_layout()
     plt.savefig('extrapolation_results_linear.pdf', bbox_inches='tight')
     plt.show()
+
+    #mention the total efficiency, maybe figure 4
+    qubits, depths, known_size = bmark['given_params']
+    print("Projected size: ", known_size)
+    for ansatz, bmark in bmark_dict.items():
+        sim_results, sim_variance, abs_errors, projected_results, error = bmark['metrics']
+        log_algo_res, log_hw_res, log_algo_res_list, log_hw_res_list = bmark['resources']
+        print("Projected error for ansatz {}: {}".format(ansatz, error))
+        print("METRIC = 1- Projected error for {}: {}".format(ansatz, 1-error))
+        print("Total ALGO RESOURCES for {} in log = {}".format(ansatz, log_algo_res))
+        print("Total HW RESOURCES for {} in log= {}".format(ansatz, log_hw_res))
+        print("ALGO Efficiency = METRIC/ALGO_RESOURCES for {} in log= {}".format(ansatz, np.log10(1-error) - log_algo_res))

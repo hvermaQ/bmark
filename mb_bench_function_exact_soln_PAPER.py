@@ -211,57 +211,7 @@ def hardware_resource(algo_resources):
     E_cool = (T_ext - T_qb) * A * E_1qb * algo_resources / T_qb
     return E_cool
 
-def plot_results(problem_sizes, values, errors, results, target_size):
-    """
-    Plot extrapolation results with polynomial fit and confidence intervals.
 
-    Parameters:
-        problem_sizes (list): List of problem sizes.
-        values (list): Corresponding values for the problem sizes.
-        errors (list): Errors (standard deviations) associated with the values.
-        results (dict): Results from polynomial extrapolation.
-        target_size (int): The target problem size for extrapolation.
-    """
-    # Determine the degree of the polynomial (n-1 where n is the number of points)
-    #degree = len(problem_sizes) - 1
-    degree = 1
-
-    # Create figure
-    plt.figure(figsize=(12, 8))
-
-    # Plot data points with error bars
-    plt.errorbar(problem_sizes, values, yerr=errors, fmt='o', color='blue',
-                 label='Data with error bars', markersize=8, capsize=5)
-
-    # Generate polynomial fit
-    coefficients = results['polynomial_coefficients']
-    poly = Polynomial(coefficients)
-    x_range = np.linspace(min(problem_sizes), target_size * 1.1, 100)
-    y_fit = poly(x_range)
-
-    # Plot polynomial fit
-    plt.plot(x_range, y_fit, 'r--', label=f'Polynomial fit (degree={degree})')
-
-    # Mark extrapolated point
-    plt.errorbar([target_size], [results['extrapolated_value']],
-                 yerr=[results['extrapolated_error']], fmt='ro', markersize=10,
-                 capsize=5, label='Extrapolated value with error')
-
-    # Add vertical line at target size
-    plt.axvline(x=target_size, color='k', linestyle='--', alpha=0.5,
-                label=f'Target size: {target_size}')
-
-    # Add labels, title, and legend
-    plt.xlabel('Problem Size')
-    plt.ylabel('Value')
-    plt.title('Polynomial Extrapolation with Error Propagation')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-
-    # Save and show plot
-    plt.tight_layout()
-    plt.savefig('extrapolation_results_polyfit.pdf', bbox_inches='tight')
-    plt.show()
 
 def benchmark(nqbits, depths, rnds, ansatz, observe, noise_params, nshots, known_size, hw):
     print("Benchmarking Main")
